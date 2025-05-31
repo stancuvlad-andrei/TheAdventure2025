@@ -14,6 +14,8 @@ public class PlayerObject : GameObject
 
     private const int Speed = 128; // pixels per second
 
+    public bool CanPushBomb { get; set; } = false;
+
     public PlayerObject(GameRenderer renderer)
     {
         _textureId = renderer.LoadTexture(Path.Combine("Assets", "player.png"), out _);
@@ -44,6 +46,6 @@ public class PlayerObject : GameObject
 
     private void UpdateTarget()
     {
-        _target = new(X + 24, Y - 42, 48, 48);
+        _target = new(X - 24, Y - 42, 48, 48);
     }
 }

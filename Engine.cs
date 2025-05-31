@@ -28,6 +28,11 @@ public class Engine
 
     private readonly Random _random = new();
 
+    private DateTimeOffset _lastPickupSpawnTime = DateTimeOffset.Now;
+    private readonly double _pickupSpawnInterval = 10000;
+    private readonly string _pickupTag = "PushPickup";
+
+
     public Engine(GameRenderer renderer, Input input)
     {
         _renderer = renderer;
@@ -95,6 +100,53 @@ public class Engine
 
         _player?.UpdatePosition(up, down, left, right, (int)msSinceLastFrame);
 
+        var pickupsToRemove = new List<int>();
+        foreach (var gameObject in _gameObjects.Values)
+        {
+            if (gameObject is TemporaryGameObject temp && temp.Tag == _pickupTag)
+            {
+                int dx = temp.Position.X - _player.X;
+                int dy = temp.Position.Y - _player.Y;
+                double dist = Math.Sqrt(dx * dx + dy * dy);
+
+                if (dist < 32)
+                {
+                    _player.CanPushBomb = true;
+                    pickupsToRemove.Add(temp.Id);
+                }
+            }
+        }
+
+        foreach (var id in pickupsToRemove)
+        {
+            _gameObjects.Remove(id);
+        }
+
+        if (_input.IsSpacePressed() && _player.CanPushBomb)
+        {
+            foreach (var gameObject in _gameObjects.Values)
+            {
+                if (gameObject is TemporaryGameObject bomb && bomb.Tag != _pickupTag)
+                {
+                    int dx = bomb.Position.X - _player.X;
+                    int dy = bomb.Position.Y - _player.Y;
+                    double distance = Math.Sqrt(dx * dx + dy * dy);
+
+                    if (distance < 50)
+                    {
+                        double len = Math.Max(1, distance);
+                        int pushX = (int)(dx / len * 32);
+                        int pushY = (int)(dy / len * 32);
+
+                        bomb.Position = (bomb.Position.X + pushX, bomb.Position.Y + pushY);
+
+                        _player.CanPushBomb = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         if ((currentTime - _lastBombSpawnTime).TotalMilliseconds >= _bombSpawnInterval)
         {
             double angle = _random.NextDouble() * 2 * Math.PI;
@@ -113,6 +165,14 @@ public class Engine
             AddBomb(bombX, bombY);
             _lastBombSpawnTime = currentTime;
         }
+
+        if ((currentTime - _lastPickupSpawnTime).TotalMilliseconds >= _pickupSpawnInterval)
+        {
+            int pickupX = _random.Next(0, _levelWidth);
+            int pickupY = _random.Next(0, _levelHeight);
+            AddPushPickup(pickupX, pickupY);
+            _lastPickupSpawnTime = currentTime;
+        }
     }
 
     public void RenderFrame()
@@ -121,12 +181,24 @@ public class Engine
         _renderer.ClearScreen();
 
         _renderer.CameraLookAt(_player!.X, _player!.Y);
-
         RenderTerrain();
         RenderAllObjects();
 
+        if (_player.CanPushBomb)
+        {
+            _renderer.CameraLookAt(0, 0);
+
+            int iconTex = _renderer.LoadTexture(Path.Combine("Assets", "hand.png"), out _);
+            var src = new Rectangle<int>(0, 0, 27, 27);
+            var dst = new Rectangle<int>(20, 20, 27, 27);
+
+            _renderer.RenderTexture(iconTex, src, dst);
+            _renderer.CameraLookAt(_player.X, _player.Y);
+        }
+
         _renderer.PresentFrame();
     }
+
 
     public void RenderAllObjects()
     {
@@ -207,4 +279,24 @@ public class Engine
         TemporaryGameObject bomb = new(spriteSheet, 2.1, (worldX, worldY));
         _gameObjects.Add(bomb.Id, bomb);
     }
+
+    private void AddPushPickup(int worldX, int worldY)
+    {
+        SpriteSheet spriteSheet = new(_renderer, Path.Combine("Assets", "hand.png"), 1, 1, 27, 27, (13, 13)); // centru la mijloc
+
+        spriteSheet.Animations["Idle"] = new SpriteSheet.Animation
+        {
+            StartFrame = (0, 0),
+            EndFrame = (0, 0),
+            DurationMs = 1000,
+            Loop = true
+        };
+        spriteSheet.ActivateAnimation("Idle");
+
+        TemporaryGameObject pickup = new(spriteSheet, 15.0, (worldX, worldY));
+        pickup.Tag = _pickupTag;
+        _gameObjects.Add(pickup.Id, pickup);
+    }
+
+
 }
